@@ -1,11 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
 	"vitals/internal/core"
+	"vitals/internal/i18n"
 )
 
 const (
@@ -34,17 +34,30 @@ func (m *healthMonitor) Reset() {
 	*m = healthMonitor{}
 }
 
-func (m *healthMonitor) Observe(snapshot core.Snapshot, now time.Time) []healthAlert {
+// Observe 检测持续异常并返回需要发送的提醒，文案由 tr 提供本地化。
+func (m *healthMonitor) Observe(snapshot core.Snapshot, now time.Time, tr i18n.Localizer) []healthAlert {
 	checks := []struct {
-		state   *anomalyState
-		active  bool
-		id      string
-		title   string
-		message string
+		state     *anomalyState
+		active    bool
+		id        string
+		titleKey  string
+		messageFn func() string
 	}{
-		{&m.memory, snapshot.MemoryPercent >= 90, "memory", "内存持续紧张", fmt.Sprintf("内存使用率已持续达到 %.0f%%", snapshot.MemoryPercent)},
-		{&m.cpu, snapshot.CPUPercent >= 90, "cpu", "CPU 持续高负载", fmt.Sprintf("CPU 使用率已持续达到 %.0f%%", snapshot.CPUPercent)},
-		{&m.disk, snapshot.DiskPercent >= 90, "disk", "磁盘空间不足", fmt.Sprintf("磁盘已使用 %.0f%%，建议在系统设置中管理存储空间", snapshot.DiskPercent)},
+		{
+			state: &m.memory, active: snapshot.MemoryPercent >= 90, id: "memory",
+			titleKey: "alert.memory_title",
+			messageFn: func() string { return tr.Tf("alert.memory_body", snapshot.MemoryPercent) },
+		},
+		{
+			state: &m.cpu, active: snapshot.CPUPercent >= 90, id: "cpu",
+			titleKey: "alert.cpu_title",
+			messageFn: func() string { return tr.Tf("alert.cpu_body", snapshot.CPUPercent) },
+		},
+		{
+			state: &m.disk, active: snapshot.DiskPercent >= 90, id: "disk",
+			titleKey: "alert.disk_title",
+			messageFn: func() string { return tr.Tf("alert.disk_body", snapshot.DiskPercent) },
+		},
 	}
 	var alerts []healthAlert
 	for _, check := range checks {
@@ -63,23 +76,24 @@ func (m *healthMonitor) Observe(snapshot core.Snapshot, now time.Time) []healthA
 		check.state.lastNotified = now
 		alerts = append(alerts, healthAlert{
 			ID:      "health-" + check.id,
-			Title:   check.title,
-			Message: check.message,
+			Title:   tr.T(check.titleKey),
+			Message: check.messageFn(),
 		})
 	}
 	return alerts
 }
 
-func healthSummary(snapshot core.Snapshot, startupItems []core.StartupItem) (title, detail string, attention bool) {
+// healthSummary 返回状态页顶部的健康摘要文案。
+func healthSummary(snapshot core.Snapshot, startupItems []core.StartupItem, tr i18n.Localizer) (title, detail string, attention bool) {
 	var issues []string
 	if snapshot.MemoryPercent >= 90 {
-		issues = append(issues, "内存紧张")
+		issues = append(issues, tr.T("health.issue_memory"))
 	}
 	if snapshot.CPUPercent >= 90 {
-		issues = append(issues, "CPU 高负载")
+		issues = append(issues, tr.T("health.issue_cpu"))
 	}
 	if snapshot.DiskPercent >= 90 {
-		issues = append(issues, "磁盘空间不足")
+		issues = append(issues, tr.T("health.issue_disk"))
 	}
 	review := 0
 	for _, item := range startupItems {
@@ -88,10 +102,10 @@ func healthSummary(snapshot core.Snapshot, startupItems []core.StartupItem) (tit
 		}
 	}
 	if review > 0 {
-		issues = append(issues, fmt.Sprintf("%d 个启动项需关注", review))
+		issues = append(issues, tr.Tf("health.issue_startup", review))
 	}
 	if len(issues) == 0 {
-		return "运行状态良好", "没有发现持续资源压力", false
+		return tr.T("health.good_title"), tr.T("health.good_detail"), false
 	}
-	return "建议检查", strings.Join(issues, " · "), true
+	return tr.T("health.check_title"), strings.Join(issues, " · "), true
 }

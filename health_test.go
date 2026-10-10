@@ -5,36 +5,40 @@ import (
 	"time"
 
 	"vitals/internal/core"
+	"vitals/internal/i18n"
 )
 
 func TestHealthMonitorRequiresSustainedPressureAndCooldown(t *testing.T) {
 	var monitor healthMonitor
 	start := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 	high := core.Snapshot{CPUPercent: 96}
+	tr := i18n.New(i18n.LangZH)
 
-	if alerts := monitor.Observe(high, start); len(alerts) != 0 {
+	if alerts := monitor.Observe(high, start, tr); len(alerts) != 0 {
 		t.Fatalf("initial alerts = %#v", alerts)
 	}
-	if alerts := monitor.Observe(high, start.Add(29*time.Second)); len(alerts) != 0 {
+	if alerts := monitor.Observe(high, start.Add(29*time.Second), tr); len(alerts) != 0 {
 		t.Fatalf("early alerts = %#v", alerts)
 	}
-	alerts := monitor.Observe(high, start.Add(30*time.Second))
+	alerts := monitor.Observe(high, start.Add(30*time.Second), tr)
 	if len(alerts) != 1 || alerts[0].ID != "health-cpu" {
 		t.Fatalf("sustained alerts = %#v", alerts)
 	}
-	if alerts := monitor.Observe(high, start.Add(time.Minute)); len(alerts) != 0 {
+	if alerts := monitor.Observe(high, start.Add(time.Minute), tr); len(alerts) != 0 {
 		t.Fatalf("cooldown alerts = %#v", alerts)
 	}
-	monitor.Observe(core.Snapshot{}, start.Add(2*time.Minute))
-	if alerts := monitor.Observe(high, start.Add(3*time.Minute)); len(alerts) != 0 {
+	monitor.Observe(core.Snapshot{}, start.Add(2*time.Minute), tr)
+	if alerts := monitor.Observe(high, start.Add(3*time.Minute), tr); len(alerts) != 0 {
 		t.Fatalf("reset alerts = %#v", alerts)
 	}
 }
 
 func TestHealthSummaryIncludesStartupReview(t *testing.T) {
+	tr := i18n.New(i18n.LangZH)
 	title, detail, attention := healthSummary(
 		core.Snapshot{MemoryPercent: 92},
 		[]core.StartupItem{{NeedsReview: true}},
+		tr,
 	)
 	if title != "建议检查" || !attention || detail != "内存紧张 · 1 个启动项需关注" {
 		t.Fatalf("summary = %q, %q, %v", title, detail, attention)

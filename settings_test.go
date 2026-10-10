@@ -14,7 +14,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 		ShowGPU:     true,
 		ShowNetwork: false,
 		Alerts:      true,
-		RefreshRate: "5 秒",
+		RefreshRate: "5s",
 	}
 	if err := saveSettings(path, want); err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestSettingsAlwaysKeepOneMetric(t *testing.T) {
 	if settings.visibleMetricCount() != 4 {
 		t.Fatalf("visible metric count = %d, want 4", settings.visibleMetricCount())
 	}
-	if settings.RefreshRate != "2 秒" {
-		t.Fatalf("refresh rate = %q, want 2 秒", settings.RefreshRate)
+	if settings.RefreshRate != "2s" {
+		t.Fatalf("refresh rate = %q, want 2s", settings.RefreshRate)
 	}
 }

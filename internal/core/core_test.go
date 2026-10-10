@@ -16,10 +16,10 @@ func TestRelatedConfidence(t *testing.T) {
 		want      string
 		wantMatch bool
 	}{
-		{"dev.example.app", "高", true},
-		{"dev.example.app.savedState", "高", true},
-		{"Example App", "中", true},
-		{"Example App.log", "中", true},
+		{"dev.example.app", "high", true},
+		{"dev.example.app.savedState", "high", true},
+		{"Example App", "medium", true},
+		{"Example App.log", "medium", true},
 		{"example", "", false},
 		{"dev.example.other", "", false},
 	}

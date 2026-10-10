@@ -97,7 +97,7 @@ func scanLaunchPlists(
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("读取启动项目录 %s: %w", root.Path, err)
+			return nil, fmt.Errorf("read startup directory %s: %w", root.Path, err)
 		}
 		for _, entry := range entries {
 			if err := ctx.Err(); err != nil {
@@ -275,15 +275,15 @@ func codeSigningInfo(ctx context.Context, path string) (developer, teamID, ident
 func startupReview(item StartupItem) (bool, string) {
 	if item.Executable != "" && filepath.IsAbs(item.Executable) {
 		if _, err := os.Stat(item.Executable); errors.Is(err, fs.ErrNotExist) {
-			return true, "执行文件已不存在"
+			return true, "executable no longer exists"
 		}
 	}
 	switch strings.ToLower(filepath.Base(item.Executable)) {
 	case "sh", "bash", "zsh", "python", "python3", "osascript":
-		return true, "通过脚本解释器启动"
+		return true, "launched through a script interpreter"
 	}
 	if item.Executable != "" && item.Developer == "" && item.TeamID == "" {
-		return true, "未识别到代码签名"
+		return true, "no code signature recognized"
 	}
 	return false, ""
 }

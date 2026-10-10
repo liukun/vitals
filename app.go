@@ -25,6 +25,7 @@ import (
 	"golang.org/x/image/math/fixed"
 
 	"vitals/internal/core"
+	"vitals/internal/i18n"
 )
 
 type application struct {
@@ -39,6 +40,7 @@ type application struct {
 	settings     appSettings
 	settingsPath string
 	sampleEvery  atomic.Int64
+	localizer    i18n.Localizer
 
 	pendingMemory core.MemoryConsumer
 	confirmMemory bool
@@ -82,8 +84,29 @@ func newApplication() *application {
 		settings:     defaultSettings(),
 		showOnLaunch: launchWindowVisible(),
 	}
+	app.localizer = i18n.New(i18n.Lang(app.settings.Language))
 	app.sampleEvery.Store(int64(app.settings.refreshInterval()))
 	return app
+}
+
+// tr 返回当前语言下 key 对应的文案。
+func (a *application) tr(key string) string {
+	return a.localizer.T(key)
+}
+
+// trf 返回格式化后的文案。
+func (a *application) trf(key string, args ...any) string {
+	return a.localizer.Tf(key, args...)
+}
+
+// setLanguage 切换界面语言并持久化设置。
+func (a *application) setLanguage(lang string) {
+	a.settings.Language = lang
+	a.localizer = a.localizer.SetLang(i18n.Lang(lang))
+	a.persistSettings()
+	if a.tray != nil {
+		a.tray.SetToolTip(menuBarToolTip(a.snapshot, a.settings, a.localizer))
+	}
 }
 
 func (a *application) ready() {
@@ -95,16 +118,17 @@ func (a *application) ready() {
 			log.Println(loadErr)
 		}
 	}
+	a.localizer = i18n.New(i18n.Lang(a.settings.Language))
 	a.settings.OpenAtLogin = mygo.App.OpenAtLogin()
 	a.sampleEvery.Store(int64(a.settings.refreshInterval()))
 	var err error
 	a.tray, err = mygo.NewTray(mygo.TrayOptions{
 		Icon:           menuBarStatusImage(core.Snapshot{}, a.settings),
 		IconIsTemplate: true,
-		ToolTip:        "Vitals 正在读取系统状态",
+		ToolTip:        a.tr("menu.tooltip.reading"),
 	})
 	if err != nil {
-		log.Fatal("创建菜单栏图标: ", err)
+		log.Fatal("create menu bar icon: ", err)
 	}
 	a.win = mygo.NewWindow(mygo.WindowOptions{
 		Title:             "Vitals",
@@ -169,8 +193,8 @@ func (a *application) loadStartupItems() {
 		a.startupLoading = false
 		a.startupLoaded = true
 		if err != nil {
-			a.startupError = "暂时无法检查启动项"
-			log.Println("扫描启动项:", err)
+			a.startupError = a.tr("error.startup_scan")
+			log.Println("scan startup items:", err)
 			return
 		}
 		a.startupError = ""
@@ -194,9 +218,9 @@ func (a *application) sampleLoop() {
 		a.win.Update(func() {
 			a.snapshot = snapshot
 			_ = a.tray.SetIcon(menuBarStatusImage(snapshot, a.settings), true)
-			a.tray.SetToolTip(menuBarToolTip(snapshot, a.settings))
+			a.tray.SetToolTip(menuBarToolTip(snapshot, a.settings, a.localizer))
 			if a.settings.Alerts {
-				for _, alert := range a.health.Observe(snapshot, time.Now()) {
+				for _, alert := range a.health.Observe(snapshot, time.Now(), a.localizer) {
 					go a.showHealthAlert(alert)
 				}
 			}
@@ -275,7 +299,7 @@ func (a *application) showHealthAlert(alert healthAlert) {
 		Body:  alert.Message,
 	})
 	if err := notification.Show(); err != nil && !errors.Is(err, mygo.ErrNotificationsDenied) {
-		log.Println("显示健康提醒:", err)
+		log.Println("show health alert:", err)
 	}
 }
 
@@ -289,16 +313,16 @@ func (a *application) testHealthNotification() {
 		err := mygo.NewNotification(mygo.NotificationOptions{
 			ID:    "health-test",
 			Group: "health",
-			Title: "Vitals 健康提醒",
-			Body:  "通知工作正常。只有资源持续异常时才会提醒。",
+			Title: a.tr("alert.test_title"),
+			Body:  a.tr("alert.test_body"),
 		}).Show()
 		a.win.Update(func() {
 			a.testingNotification = false
 			if err != nil {
-				a.showActionError(fmt.Errorf("发送测试提醒: %w", err))
+				a.showActionError(fmt.Errorf("send test alert: %w", err))
 				return
 			}
-			a.notificationResult = "测试提醒已发送"
+			a.notificationResult = a.tr("alert.test_sent")
 		})
 	}()
 }
@@ -362,9 +386,9 @@ func (a *application) releaseApplicationMemory() {
 				}
 			}
 			if stillRunning {
-				a.memoryResult = fmt.Sprintf("已请求 %s 退出，应用仍在处理退出操作", app.Name)
+				a.memoryResult = a.trf("memory.release_pending", app.Name)
 			} else {
-				a.memoryResult = fmt.Sprintf("%s 已退出，常驻内存减少约 %s", app.Name, formatBytes(released))
+				a.memoryResult = a.trf("memory.release_done", app.Name, formatBytes(released))
 			}
 		})
 	}()
@@ -443,8 +467,12 @@ func (a *application) quitSelectedApplication() {
 
 func (a *application) showActionError(err error) {
 	var permissionError *core.FullDiskAccessError
-	a.actionError = err.Error()
 	a.errorSettings = errors.As(err, &permissionError)
+	if a.errorSettings {
+		a.actionError = a.trf("error.full_disk_body", permissionError.Path)
+	} else {
+		a.actionError = err.Error()
+	}
 	a.errorOpen = true
 }
 
@@ -453,19 +481,19 @@ func (a *application) persistSettings() {
 	a.sampleEvery.Store(int64(a.settings.refreshInterval()))
 	if a.settingsPath != "" {
 		if err := saveSettings(a.settingsPath, a.settings); err != nil {
-			a.showActionError(fmt.Errorf("保存设置: %w", err))
+			a.showActionError(fmt.Errorf("save settings: %w", err))
 		}
 	}
 	if a.tray != nil {
 		_ = a.tray.SetIcon(menuBarStatusImage(a.snapshot, a.settings), true)
-		a.tray.SetToolTip(menuBarToolTip(a.snapshot, a.settings))
+		a.tray.SetToolTip(menuBarToolTip(a.snapshot, a.settings, a.localizer))
 	}
 }
 
 func (a *application) setOpenAtLogin(enabled bool) {
 	if err := mygo.App.SetOpenAtLogin(enabled); err != nil {
 		a.settings.OpenAtLogin = !enabled
-		a.showActionError(fmt.Errorf("更新登录启动设置: %w", err))
+		a.showActionError(fmt.Errorf("update login item: %w", err))
 		return
 	}
 	a.settings.OpenAtLogin = enabled
@@ -502,7 +530,7 @@ func (a *application) showWindow() {
 func (a *application) openTrayMenu() {
 	a.win.Hide()
 	menu := mygo.NewMenu([]*mygo.MenuItem{
-		{Label: "打开 Vitals", Click: func(*mygo.MenuItem, *mygo.Window) { a.showWindow() }},
+		{Label: a.tr("common.open_vitals"), Click: func(*mygo.MenuItem, *mygo.Window) { a.showWindow() }},
 		mygo.Separator(),
 		{Role: mygo.RoleQuit},
 	})
@@ -576,7 +604,7 @@ func menuBarStatusImage(snapshot core.Snapshot, settings appSettings) []byte {
 	return buffer.Bytes()
 }
 
-func menuBarToolTip(snapshot core.Snapshot, settings appSettings) string {
+func menuBarToolTip(snapshot core.Snapshot, settings appSettings, tr i18n.Localizer) string {
 	parts := make([]string, 0, 5)
 	if settings.ShowGPU {
 		parts = append(parts, fmt.Sprintf("GPU %.0f%%", snapshot.GPUPercent))
@@ -588,9 +616,9 @@ func menuBarToolTip(snapshot core.Snapshot, settings appSettings) string {
 		parts = append(parts, fmt.Sprintf("RAM %.0f%%", snapshot.MemoryPercent))
 	}
 	if settings.ShowNetwork {
-		parts = append(parts, "下载 "+formatRate(snapshot.NetworkDown), "上传 "+formatRate(snapshot.NetworkUp))
+		parts = append(parts, tr.Tf("menu.tooltip.download", formatRate(snapshot.NetworkDown)), tr.Tf("menu.tooltip.upload", formatRate(snapshot.NetworkUp)))
 	}
-	return strings.Join(parts, " · ") + " · 更新于 " + snapshot.UpdatedAt.Format("15:04:05")
+	return strings.Join(parts, " · ") + " · " + tr.Tf("menu.tooltip.updated", snapshot.UpdatedAt.Format("15:04:05"))
 }
 
 var statusFont struct {

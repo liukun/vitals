@@ -9,6 +9,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"vitals/internal/core"
+	"vitals/internal/i18n"
 )
 
 const startupSettingsURL = "x-apple.systempreferences:com.apple.LoginItems-Settings.extension"
@@ -63,9 +64,9 @@ func (a *application) view(c *ui.Context) {
 	})
 	errorResult := -1
 	if a.errorSettings {
-		errorResult = ui.AlertDialog(c, &a.errorOpen, "需要完全磁盘访问", a.actionError, "取消", "打开设置")
+		errorResult = ui.AlertDialog(c, &a.errorOpen, a.tr("error.full_disk_title"), a.actionError, a.tr("common.cancel"), a.tr("common.open_settings"))
 	} else {
-		errorResult = ui.AlertDialog(c, &a.errorOpen, "操作未完成", a.actionError, "知道了")
+		errorResult = ui.AlertDialog(c, &a.errorOpen, a.tr("error.action_title"), a.actionError, a.tr("common.confirm"))
 	}
 	if errorResult >= 0 {
 		openSettings := a.errorSettings && errorResult == 1
@@ -80,14 +81,14 @@ func (a *application) view(c *ui.Context) {
 	if ui.AlertDialog(
 		c,
 		&a.confirmMemory,
-		"释放 “"+a.localizedApplicationName(a.pendingMemory.AppPath, a.pendingMemory.Name)+"” 的内存？",
-		fmt.Sprintf("这会正常退出该应用及其 %d 个进程，未保存的内容可能丢失。", a.pendingMemory.ProcessCount),
-		"取消",
-		"退出并释放",
+		a.trf("memory.release_title", a.localizedApplicationName(a.pendingMemory.AppPath, a.pendingMemory.Name)),
+		a.trf("memory.release_body", a.pendingMemory.ProcessCount),
+		a.tr("common.cancel"),
+		a.tr("memory.release_confirm"),
 	) == 1 {
 		a.releaseApplicationMemory()
 	}
-	if ui.AlertDialog(c, &a.confirmUninstall, "移到废纸篓？", a.uninstallSummary(), "取消", "卸载") == 1 {
+	if ui.AlertDialog(c, &a.confirmUninstall, a.tr("uninstall.title"), a.uninstallSummary(), a.tr("common.cancel"), a.tr("uninstall.confirm")) == 1 {
 		a.uninstallSelected()
 	}
 }
@@ -107,15 +108,15 @@ func (a *application) panelHeader(c *ui.Context) {
 			ui.Text(c, "Vitals").FontSize(15).Bold()
 		})
 		ui.Spacer(c)
-		ui.Segmented(c, &a.page, "状态", "内存", "应用", "设置").
-			Label("功能").
+		ui.Segmented(c, &a.page, a.tr("tabs.status"), a.tr("tabs.memory"), a.tr("tabs.apps"), a.tr("tabs.settings")).
+			Label(a.tr("tabs.label")).
 			Shrink(0)
 	})
 }
 
 func (a *application) overview(c *ui.Context) {
 	snapshot := a.snapshot
-	title, detail, attention := healthSummary(snapshot, a.startupItems)
+	title, detail, attention := healthSummary(snapshot, a.startupItems, a.localizer)
 	accent := ui.Hex("#16A34A")
 	if attention {
 		accent = ui.Hex("#D97706")
@@ -132,24 +133,24 @@ func (a *application) overview(c *ui.Context) {
 		})
 	}).Padding(12)
 	ui.Grid(c).Columns(2).Gap(10).Children(func() {
-		metricCard(c, "CPU", fmt.Sprintf("%.0f%%", snapshot.CPUPercent), "处理器", iconPulse, ui.Hex("#2563EB"), snapshot.HistoryCPU, 100)
+		metricCard(c, "CPU", fmt.Sprintf("%.0f%%", snapshot.CPUPercent), a.tr("overview.cpu_detail"), iconPulse, ui.Hex("#2563EB"), snapshot.HistoryCPU, 100)
 		metricCard(c, "RAM", fmt.Sprintf("%.0f%%", snapshot.MemoryPercent), formatBytes(snapshot.MemoryUsed), iconMemory, ui.Hex("#0F9F8F"), snapshot.HistoryMemory, 100)
-		metricCard(c, "GPU", fmt.Sprintf("%.0f%%", snapshot.GPUPercent), "图形负载", iconGPU, ui.Hex("#D97706"), nil, 100)
-		metricCard(c, "网络", "↓ "+compactRate(snapshot.NetworkDown), "↑ "+compactRate(snapshot.NetworkUp), iconNetwork, ui.Hex("#DB2777"), snapshot.HistoryNetwork, maxHistory(snapshot.HistoryNetwork))
+		metricCard(c, "GPU", fmt.Sprintf("%.0f%%", snapshot.GPUPercent), a.tr("overview.ram_detail"), iconGPU, ui.Hex("#D97706"), nil, 100)
+		metricCard(c, a.tr("overview.network_title"), "↓ "+compactRate(snapshot.NetworkDown), "↑ "+compactRate(snapshot.NetworkUp), iconNetwork, ui.Hex("#DB2777"), snapshot.HistoryNetwork, maxHistory(snapshot.HistoryNetwork))
 	})
 	section(c, func() {
 		t := c.Theme()
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Gap(3).Grow(1).Children(func() {
 				ui.Text(c, "Macintosh HD").FontSize(14).Bold()
-				ui.Text(c, fmt.Sprintf("已使用 %s，共 %s", formatBytes(snapshot.DiskUsed), formatBytes(snapshot.DiskTotal))).FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, a.trf("overview.disk_used", formatBytes(snapshot.DiskUsed), formatBytes(snapshot.DiskTotal))).FontSize(12).TextColor(t.TextMuted)
 			})
 			ui.Text(c, fmt.Sprintf("%.0f%%", snapshot.DiskPercent)).FontSize(16).FontWeight(600)
 		})
-		ui.Progress(c, snapshot.DiskPercent/100).Label("磁盘使用率").Height(5)
+		ui.Progress(c, snapshot.DiskPercent/100).Label(a.tr("overview.disk_label")).Height(5)
 		if snapshot.Battery.Present {
 			ui.Divider(c)
-			batterySummary(c, snapshot.Battery)
+			batterySummary(c, snapshot.Battery, a.localizer)
 		}
 	}).Padding(14).Gap(8)
 	a.startupHealth(c)
@@ -160,15 +161,15 @@ func (a *application) startupHealth(c *ui.Context) {
 	services := c.Services()
 	_, review := startupCounts(a.startupItems)
 	accent := ui.Hex("#16A34A")
-	detail := fmt.Sprintf("%d 个启动项 · 未发现明显异常", len(a.startupItems))
+	detail := a.trf("overview.startup_healthy", len(a.startupItems))
 	if a.startupLoading {
-		detail = "正在检查可读取的启动项…"
+		detail = a.tr("overview.startup_loading")
 	} else if a.startupError != "" {
 		accent = ui.Hex("#D97706")
 		detail = a.startupError
 	} else if review > 0 {
 		accent = ui.Hex("#D97706")
-		detail = fmt.Sprintf("%d 个启动项 · %d 个需关注", len(a.startupItems), review)
+		detail = a.trf("overview.startup_review", len(a.startupItems), review)
 	}
 	section(c, func() {
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
@@ -176,12 +177,12 @@ func (a *application) startupHealth(c *ui.Context) {
 				ui.Icon(c, iconRocket).FontSize(16).TextColor(accent)
 			})
 			ui.Column(c).MinWidth(0).Grow(1).Gap(2).Children(func() {
-				ui.Text(c, "启动项健康").FontSize(13).Bold()
+				ui.Text(c, a.tr("overview.startup_title")).FontSize(13).Bold()
 				ui.Text(c, detail).FontSize(10).TextColor(t.TextMuted).SingleLine()
 			})
 			ui.Button(c, "").
-				Label("重新检查启动项").
-				Tooltip("重新检查").
+				Label(a.tr("overview.startup_refresh")).
+				Tooltip(a.tr("overview.startup_refresh_tooltip")).
 				Disabled(a.startupLoading).
 				Children(func() {
 					if a.startupLoading {
@@ -191,28 +192,28 @@ func (a *application) startupHealth(c *ui.Context) {
 					}
 				}).
 				OnClick(a.refreshStartupItems)
-			ui.Button(c, "系统管理").OnClick(func() { services.OpenURL(startupSettingsURL) })
+			ui.Button(c, a.tr("overview.system_manage")).OnClick(func() { services.OpenURL(startupSettingsURL) })
 		})
 	}).Padding(12)
 }
 
-func batterySummary(c *ui.Context, battery core.BatteryInfo) {
+func batterySummary(c *ui.Context, battery core.BatteryInfo, tr i18n.Localizer) {
 	t := c.Theme()
-	state := "使用电池"
+	state := tr.T("battery.on_battery")
 	if battery.Charging {
-		state = "正在充电"
+		state = tr.T("battery.charging")
 	} else if battery.ExternalPower {
-		state = "已连接电源"
+		state = tr.T("battery.external")
 	}
-	health := "检测中"
+	health := tr.T("battery.detecting")
 	if battery.HealthPercent > 0 {
-		health = fmt.Sprintf("健康度约 %d%%", battery.HealthPercent)
+		health = tr.Tf("battery.health", battery.HealthPercent)
 	}
 	ui.Row(c).Gap(9).AlignItems(ui.Center).Children(func() {
 		ui.Icon(c, iconBattery).FontSize(17).TextColor(ui.Hex("#16A34A"))
 		ui.Column(c).Grow(1).Gap(1).Children(func() {
-			ui.Text(c, fmt.Sprintf("电池 %d%% · %s", battery.ChargePercent, state)).FontSize(12).FontWeight(600)
-			ui.Text(c, fmt.Sprintf("%s · %d 次循环", health, battery.CycleCount)).FontSize(10).TextColor(t.TextMuted)
+			ui.Text(c, tr.Tf("battery.status", battery.ChargePercent, state)).FontSize(12).FontWeight(600)
+			ui.Text(c, tr.Tf("battery.cycles", health, battery.CycleCount)).FontSize(10).TextColor(t.TextMuted)
 		})
 		if battery.TemperatureC > 0 {
 			ui.Text(c, fmt.Sprintf("%.0f°C", battery.TemperatureC)).FontSize(11).TextColor(t.TextMuted)
@@ -243,39 +244,39 @@ func (a *application) memory(c *ui.Context) {
 	section(c, func() {
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
 			ui.Column(c).Gap(1).Grow(1).Children(func() {
-				ui.Text(c, "可用内存").FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, a.tr("memory.free")).FontSize(12).TextColor(t.TextMuted)
 				ui.Text(c, formatBytes(snapshot.MemoryFree)).FontSize(32).Bold().FontFeatures("tnum")
 			})
 			ui.Text(c, fmt.Sprintf("%.0f%%", snapshot.MemoryPercent)).FontSize(24).Bold().FontFeatures("tnum").TextColor(t.TextMuted)
 		})
-		ui.Progress(c, snapshot.MemoryPercent/100).Label("内存使用率").Height(5)
+		ui.Progress(c, snapshot.MemoryPercent/100).Label(a.tr("memory.usage_label")).Height(5)
 		ui.Row(c).Children(func() {
-			ui.Text(c, fmt.Sprintf("已用 %s", formatBytes(snapshot.MemoryUsed))).FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, a.trf("memory.used", formatBytes(snapshot.MemoryUsed))).FontSize(12).TextColor(t.TextMuted)
 			ui.Spacer(c)
-			ui.Text(c, fmt.Sprintf("总计 %s", formatBytes(snapshot.MemoryTotal))).FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, a.trf("memory.total", formatBytes(snapshot.MemoryTotal))).FontSize(12).TextColor(t.TextMuted)
 		})
 		ui.Divider(c)
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "内存构成").FontSize(14).Bold()
+			ui.Text(c, a.tr("memory.composition")).FontSize(14).Bold()
 			ui.Spacer(c)
-			ui.Text(c, fmt.Sprintf("交换区 %s / %s", formatBytes(snapshot.SwapUsed), formatBytes(snapshot.SwapTotal))).FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, a.trf("memory.swap", formatBytes(snapshot.SwapUsed), formatBytes(snapshot.SwapTotal))).FontSize(11).TextColor(t.TextMuted)
 		})
 		memoryComposition(c, snapshot)
 		ui.Grid(c).Columns(3).Gap(8).Children(func() {
-			memoryLegend(c, "活跃", snapshot.MemoryActive, ui.Hex("#2563EB"))
-			memoryLegend(c, "非活跃", snapshot.MemoryInactive, ui.Hex("#60A5FA"))
-			memoryLegend(c, "联动", snapshot.MemoryWired, ui.Hex("#0F9F8F"))
-			memoryLegend(c, "压缩", snapshot.MemoryCompressed, ui.Hex("#D97706"))
-			memoryLegend(c, "空闲", snapshot.MemoryKernelFree, ui.Hex("#D1D5DB"))
-			memoryLegend(c, "可用", snapshot.MemoryFree, ui.Hex("#16A34A"))
+			memoryLegend(c, a.tr("memory.active"), snapshot.MemoryActive, ui.Hex("#2563EB"))
+			memoryLegend(c, a.tr("memory.inactive"), snapshot.MemoryInactive, ui.Hex("#60A5FA"))
+			memoryLegend(c, a.tr("memory.wired"), snapshot.MemoryWired, ui.Hex("#0F9F8F"))
+			memoryLegend(c, a.tr("memory.compressed"), snapshot.MemoryCompressed, ui.Hex("#D97706"))
+			memoryLegend(c, a.tr("memory.kernel_free"), snapshot.MemoryKernelFree, ui.Hex("#D1D5DB"))
+			memoryLegend(c, a.tr("memory.free_legend"), snapshot.MemoryFree, ui.Hex("#16A34A"))
 		})
 	}).Padding(14).Gap(9)
 
 	section(c, func() {
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "按应用占用").FontSize(14).Bold()
+			ui.Text(c, a.tr("memory.by_app")).FontSize(14).Bold()
 			ui.Spacer(c)
-			ui.Text(c, fmt.Sprintf("前 %d 项 · 常驻内存 RSS", len(snapshot.MemoryConsumers))).FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, a.trf("memory.top_items", len(snapshot.MemoryConsumers))).FontSize(11).TextColor(t.TextMuted)
 		})
 		if a.memoryResult != "" {
 			ui.Text(c, a.memoryResult).FontSize(11).FontWeight(600).TextColor(ui.Hex("#16A34A"))
@@ -283,7 +284,7 @@ func (a *application) memory(c *ui.Context) {
 		if len(snapshot.MemoryConsumers) == 0 {
 			ui.Row(c).Gap(8).PaddingY(12).Children(func() {
 				ui.Spinner(c)
-				ui.Text(c, "正在汇总进程内存…").FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, a.tr("memory.summarizing")).FontSize(12).TextColor(t.TextMuted)
 			})
 		}
 		for _, consumer := range snapshot.MemoryConsumers {
@@ -294,25 +295,25 @@ func (a *application) memory(c *ui.Context) {
 					a.applicationImage(c, consumer.AppPath, name, 26)
 					ui.Column(c).MinWidth(0).Grow(1).Gap(1).Children(func() {
 						ui.Text(c, name).FontSize(12).FontWeight(600).SingleLine()
-						ui.Text(c, fmt.Sprintf("%d 个进程", consumer.ProcessCount)).FontSize(10).TextColor(t.TextMuted)
+						ui.Text(c, a.trf("memory.process_count", consumer.ProcessCount)).FontSize(10).TextColor(t.TextMuted)
 					})
 					ui.Column(c).AlignItems(ui.End).Gap(1).Children(func() {
 						ui.Text(c, formatBytes(consumer.RSS)).FontSize(12).FontWeight(600).FontFeatures("tnum")
 						ui.Text(c, fmt.Sprintf("%.1f%%", consumer.Percent)).FontSize(10).TextColor(t.TextMuted).FontFeatures("tnum")
 					})
 					if a.canReleaseApplicationMemory(consumer.AppPath) {
-						label := "释放"
+						label := a.tr("memory.release")
 						if a.releasingApp == consumer.AppPath {
-							label = "释放中…"
+							label = a.tr("memory.releasing")
 						}
 						ui.Button(c, label).
-							Label(name + "释放内存").
+							Label(name + a.tr("memory.release")).
 							Disabled(a.releasingApp != "").
-							Tooltip("退出应用并释放其内存").
+							Tooltip(a.tr("memory.release_action")).
 							OnClick(func() { a.requestApplicationMemoryRelease(consumer) })
 					}
 				})
-				ui.Progress(c, min(consumer.Percent/100, 1)).Label(name + "内存占比").Height(3)
+				ui.Progress(c, min(consumer.Percent/100, 1)).Label(name+a.tr("memory.release")).Height(3)
 			})
 		}
 	}).Padding(14).Gap(8)
@@ -321,26 +322,26 @@ func (a *application) memory(c *ui.Context) {
 func (a *application) settingsView(c *ui.Context) {
 	t := c.Theme()
 	section(c, func() {
-		ui.Text(c, "启动").FontSize(14).Bold()
-		settingsRow(c, "登录时启动", "登录 macOS 后在菜单栏运行", func() {
-			if ui.Switch(c, &a.settings.OpenAtLogin).Label("登录时启动").Changed() {
+		ui.Text(c, a.tr("settings.startup")).FontSize(14).Bold()
+		settingsRow(c, a.tr("settings.open_at_login"), a.tr("settings.open_at_login_detail"), func() {
+			if ui.Switch(c, &a.settings.OpenAtLogin).Label(a.tr("settings.open_at_login")).Changed() {
 				a.setOpenAtLogin(a.settings.OpenAtLogin)
 			}
 		})
 	}).Padding(14).Gap(10)
 
 	section(c, func() {
-		ui.Text(c, "状态栏").FontSize(14).Bold()
-		a.metricSetting(c, "CPU", "处理器使用率", &a.settings.ShowCPU)
-		a.metricSetting(c, "RAM", "内存使用率", &a.settings.ShowRAM)
-		a.metricSetting(c, "GPU", "图形处理器使用率", &a.settings.ShowGPU)
-		a.metricSetting(c, "网络", "实时下载与上传速率", &a.settings.ShowNetwork)
+		ui.Text(c, a.tr("settings.status_bar")).FontSize(14).Bold()
+		a.metricSetting(c, "CPU", a.tr("settings.cpu_detail"), &a.settings.ShowCPU)
+		a.metricSetting(c, "RAM", a.tr("settings.ram_detail"), &a.settings.ShowRAM)
+		a.metricSetting(c, "GPU", a.tr("settings.gpu_detail"), &a.settings.ShowGPU)
+		a.metricSetting(c, a.tr("overview.network_title"), a.tr("settings.network_detail"), &a.settings.ShowNetwork)
 	}).Padding(14).Gap(8)
 
 	section(c, func() {
-		ui.Text(c, "健康提醒").FontSize(14).Bold()
-		settingsRow(c, "持续异常提醒", "CPU 或内存持续高负载、磁盘空间不足时提醒", func() {
-			if ui.Switch(c, &a.settings.Alerts).Label("持续异常提醒").Changed() {
+		ui.Text(c, a.tr("settings.health_alerts")).FontSize(14).Bold()
+		settingsRow(c, a.tr("settings.sustained"), a.tr("settings.sustained_detail"), func() {
+			if ui.Switch(c, &a.settings.Alerts).Label(a.tr("settings.sustained")).Changed() {
 				a.health.Reset()
 				a.persistSettings()
 			}
@@ -349,12 +350,12 @@ func (a *application) settingsView(c *ui.Context) {
 			ui.Row(c).AlignItems(ui.Center).Children(func() {
 				status := a.notificationResult
 				if status == "" {
-					status = "首次发送时由 macOS 请求通知权限"
+					status = a.tr("settings.notify_permission")
 				}
 				ui.Text(c, status).FontSize(10).TextColor(t.TextMuted).Grow(1)
-				label := "测试提醒"
+				label := a.tr("settings.test_alert")
 				if a.testingNotification {
-					label = "发送中…"
+					label = a.tr("settings.test_sending")
 				}
 				ui.Button(c, label).Disabled(a.testingNotification).OnClick(a.testHealthNotification)
 			})
@@ -362,14 +363,15 @@ func (a *application) settingsView(c *ui.Context) {
 	}).Padding(14).Gap(10)
 
 	section(c, func() {
-		ui.Text(c, "更新与外观").FontSize(14).Bold()
-		settingsRow(c, "刷新频率", "状态栏与系统数据的更新间隔", func() {
-			if ui.Select(c, &a.settings.RefreshRate, []string{"1 秒", "2 秒", "5 秒"}).Label("刷新频率").Changed() {
-				a.persistSettings()
-			}
+		ui.Text(c, a.tr("settings.update_appearance")).FontSize(14).Bold()
+		settingsRow(c, a.tr("settings.refresh_rate"), a.tr("settings.refresh_detail"), func() {
+			a.refreshRateSelect(c)
 		})
-		settingsRow(c, "外观", "自动跟随 macOS 深色或浅色模式", func() {
-			ui.Text(c, "跟随系统").FontSize(11).TextColor(t.TextMuted)
+		settingsRow(c, a.tr("settings.appearance"), a.tr("settings.appearance_detail"), func() {
+			ui.Text(c, a.tr("settings.follow_system")).FontSize(11).TextColor(t.TextMuted)
+		})
+		settingsRow(c, a.tr("settings.language"), a.tr("settings.language_detail"), func() {
+			a.languageSelect(c)
 		})
 	}).Padding(14).Gap(10)
 
@@ -379,15 +381,66 @@ func (a *application) settingsView(c *ui.Context) {
 				ui.Text(c, "Vitals").FontSize(13).Bold()
 				version := mygo.App.Version()
 				if version == "" {
-					version = "调试版本"
+					version = a.tr("settings.version_debug")
 				} else {
-					version = "版本 " + version
+					version = a.trf("settings.version_format", version)
 				}
-				ui.Text(c, version+" · 数据仅保存在本机").FontSize(10).TextColor(t.TextMuted)
+				ui.Text(c, a.trf("settings.local_data", version)).FontSize(10).TextColor(t.TextMuted)
 			})
-			ui.Button(c, "退出 Vitals").OnClick(mygo.App.Quit)
+			ui.Button(c, a.tr("common.quit_vitals")).OnClick(mygo.App.Quit)
 		})
 	}).Padding(14)
+}
+
+// refreshRateSelect 使用 SelectBase 分离存储值（1s/2s/5s）与显示文案。
+func (a *application) refreshRateSelect(c *ui.Context) {
+	sel := ui.SelectBase(c, &a.settings.RefreshRate)
+	sel.Trigger.Label(a.tr("settings.refresh_rate")).Children(func() {
+		ui.Text(c, a.tr("refresh."+a.settings.RefreshRate))
+	})
+	sel.Popup(func(panel ui.Element) {
+		for _, value := range []string{"1s", "2s", "5s"} {
+			item := sel.Item(value)
+			if item.Highlighted() {
+				item.Background(c.Theme().Accent).TextColor(ui.RGB(255, 255, 255))
+			}
+			item.Children(func() { ui.Text(c, a.tr("refresh."+value)) })
+		}
+	})
+	if sel.Trigger.Changed() {
+		a.persistSettings()
+	}
+}
+
+// languageSelect 提供 auto/zh/en 三档，显示文案随当前语言变化。
+func (a *application) languageSelect(c *ui.Context) {
+	sel := ui.SelectBase(c, &a.settings.Language)
+	sel.Trigger.Label(a.tr("settings.language")).Children(func() {
+		ui.Text(c, a.languageLabel(a.settings.Language))
+	})
+	sel.Popup(func(panel ui.Element) {
+		for _, value := range []string{string(i18n.LangAuto), string(i18n.LangZH), string(i18n.LangEN)} {
+			item := sel.Item(value)
+			if item.Highlighted() {
+				item.Background(c.Theme().Accent).TextColor(ui.RGB(255, 255, 255))
+			}
+			item.Children(func() { ui.Text(c, a.languageLabel(value)) })
+		}
+	})
+	if sel.Trigger.Changed() {
+		a.setLanguage(a.settings.Language)
+	}
+}
+
+func (a *application) languageLabel(value string) string {
+	switch i18n.Lang(value) {
+	case i18n.LangZH:
+		return a.tr("settings.lang_zh")
+	case i18n.LangEN:
+		return a.tr("settings.lang_en")
+	default:
+		return a.tr("settings.lang_auto")
+	}
 }
 
 func startupCounts(items []core.StartupItem) (enabled, review int) {
@@ -486,17 +539,17 @@ func (a *application) uninstaller(c *ui.Context) {
 func (a *application) uninstallerList(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Fill().MinHeight(0).Gap(10).Children(func() {
-		ui.Text(c, "应用管理").FontSize(15).Bold()
-		ui.TextInput(c, &a.appQuery).Label("搜索应用").Placeholder("搜索应用")
+		ui.Text(c, a.tr("apps.title")).FontSize(15).Bold()
+		ui.TextInput(c, &a.appQuery).Label(a.tr("apps.search_label")).Placeholder(a.tr("apps.search_placeholder"))
 		if a.loadingApps {
 			ui.Column(c).Grow(1).Center().Gap(8).Children(func() {
 				ui.Spinner(c)
-				ui.Text(c, "正在读取应用…").FontSize(12).TextColor(t.TextMuted)
+				ui.Text(c, a.tr("apps.loading")).FontSize(12).TextColor(t.TextMuted)
 			})
 			return
 		}
 		indices := filteredApplications(a.apps, a.appQuery)
-		ui.Scroll(c).Grow(1).Gap(3).Label("应用列表").Children(func() {
+		ui.Scroll(c).Grow(1).Gap(3).Label(a.tr("apps.title")).Children(func() {
 			for _, index := range indices {
 				index := index
 				app := a.apps[index]
@@ -510,14 +563,14 @@ func (a *application) uninstallerList(c *ui.Context) {
 						ui.Text(c, app.Name).FontSize(13).FontWeight(600).SingleLine()
 						detail := app.Version
 						if app.Running {
-							detail = "正在运行 · " + detail
+							detail = a.trf("apps.running", detail)
 						}
 						ui.Text(c, detail).FontSize(10).TextColor(t.TextMuted).SingleLine()
 					})
 				})
 			}
 		})
-		ui.Text(c, fmt.Sprintf("%d 个应用", len(indices))).FontSize(11).TextColor(t.TextMuted)
+		ui.Text(c, a.trf("apps.count", len(indices))).FontSize(11).TextColor(t.TextMuted)
 	})
 }
 
@@ -529,12 +582,12 @@ func (a *application) uninstallerDetail(c *ui.Context) {
 	startupEnabled, startupTotal := a.applicationStartupCounts(*app)
 	ui.Column(c).Fill().MinHeight(0).Gap(12).Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Button(c, "").Label("返回应用列表").Tooltip("返回应用列表").Children(func() {
+			ui.Button(c, "").Label(a.tr("apps.back_label")).Tooltip(a.tr("apps.back_tooltip")).Children(func() {
 				ui.Icon(c, iconBack).FontSize(17)
 			}).OnClick(func() {
 				a.selectedApp = -1
 			})
-			ui.Text(c, "应用健康档案").FontSize(15).Bold()
+			ui.Text(c, a.tr("apps.profile_title")).FontSize(15).Bold()
 		})
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Padding(10, 12).Radius(8).Background(t.Surface).Border(1, t.Border).Children(func() {
 			a.applicationImage(c, app.Path, app.Name, 42)
@@ -543,70 +596,82 @@ func (a *application) uninstallerDetail(c *ui.Context) {
 				ui.Text(c, app.BundleID).FontSize(10).TextColor(t.TextMuted).SingleLine()
 			})
 			if app.Running {
-				label := "退出应用"
+				label := a.tr("apps.quit")
 				if a.quittingApp {
-					label = "正在退出…"
+					label = a.tr("apps.quitting")
 				}
 				ui.Button(c, label).Disabled(a.quittingApp).OnClick(a.quitSelectedApplication)
 			}
 		})
 		ui.Grid(c).Columns(3).Gap(8).Children(func() {
-			healthMetric(c, "常驻内存", formatBytes(memory), fmt.Sprintf("%d 个进程", processes))
-			healthMetric(c, "启动项", fmt.Sprint(startupEnabled), fmt.Sprintf("共 %d 项", startupTotal))
+			healthMetric(c, a.tr("apps.resident_memory"), formatBytes(memory), a.trf("memory.process_count", processes))
+			healthMetric(c, a.tr("apps.startup_items"), fmt.Sprint(startupEnabled), a.trf("apps.startup_total", startupTotal))
 			storage := app.TotalBytes
 			if storage == 0 {
 				storage = app.Size
 			}
-			healthMetric(c, "磁盘占用", formatBytes(storage), "应用与已选关联项")
+			healthMetric(c, a.tr("apps.disk_usage"), formatBytes(storage), a.tr("apps.disk_detail"))
 		})
 		if startupTotal > 0 {
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, fmt.Sprintf("该应用关联 %d 个启动项，其中 %d 个已启用", startupTotal, startupEnabled)).
+				ui.Text(c, a.trf("apps.startup_linked", startupTotal, startupEnabled)).
 					FontSize(10).
 					TextColor(t.TextMuted).
 					Grow(1)
-				ui.Button(c, "系统管理").OnClick(func() { services.OpenURL(startupSettingsURL) })
+				ui.Button(c, a.tr("overview.system_manage")).OnClick(func() { services.OpenURL(startupSettingsURL) })
 			})
 		} else if a.startupLoading {
-			ui.Text(c, "正在关联启动项…").FontSize(10).TextColor(t.TextMuted)
+			ui.Text(c, a.tr("apps.startup_linking")).FontSize(10).TextColor(t.TextMuted)
 		}
 		ui.Row(c).Children(func() {
-			ui.Text(c, "将移到废纸篓").FontSize(13).Bold()
+			ui.Text(c, a.tr("apps.to_trash")).FontSize(13).Bold()
 			ui.Spacer(c)
-			ui.Text(c, fmt.Sprintf("%d 项 · %s", selectedFileCount(*app), formatBytes(selectedBytes(*app)))).FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, a.trf("apps.trash_summary", selectedFileCount(*app), formatBytes(selectedBytes(*app)))).FontSize(11).TextColor(t.TextMuted)
 		})
-		ui.Scroll(c).Grow(1).Gap(6).Padding(10, 12).Radius(8).Background(t.Surface).Border(1, t.Border).Label("关联文件列表").Children(func() {
+		ui.Scroll(c).Grow(1).Gap(6).Padding(10, 12).Radius(8).Background(t.Surface).Border(1, t.Border).Label(a.tr("apps.title")).Children(func() {
 			locked := true
-			ui.Checkbox(c, &locked, app.Path).Disabled(true).Label("应用本体")
+			ui.Checkbox(c, &locked, app.Path).Disabled(true).Label(a.tr("apps.app_body"))
 			if a.scanningRelated && !app.Scanned {
 				ui.Row(c).Gap(8).PaddingY(8).Children(func() {
 					ui.Spinner(c)
-					ui.Text(c, "正在扫描关联文件…").FontSize(12).TextColor(t.TextMuted)
+					ui.Text(c, a.tr("apps.scanning")).FontSize(12).TextColor(t.TextMuted)
 				})
 			}
 			for index := range app.Related {
 				file := &app.Related[index]
 				ui.Row(c.Key(file.Path)).Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Checkbox(c, &file.Selected, file.Path).Grow(1)
-					ui.Text(c, file.Confidence+"置信度").FontSize(10).TextColor(t.TextMuted)
+					ui.Text(c, confidenceLabel(file.Confidence, a.localizer)).FontSize(10).TextColor(t.TextMuted)
 					ui.Text(c, formatBytes(file.Size)).Width(58).TextAlign(ui.End).FontSize(10).TextColor(t.TextMuted)
 				})
 			}
 			if app.Scanned && len(app.Related) == 0 {
-				ui.Text(c, "未发现额外关联文件。").FontSize(12).TextColor(t.TextMuted).PaddingY(8)
+				ui.Text(c, a.tr("apps.no_related")).FontSize(12).TextColor(t.TextMuted).PaddingY(8)
 			}
 		})
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "移除后可从废纸篓恢复").FontSize(11).TextColor(t.TextMuted).Grow(1)
-			label := "卸载"
+			ui.Text(c, a.tr("apps.recoverable")).FontSize(11).TextColor(t.TextMuted).Grow(1)
+			label := a.tr("uninstall.confirm")
 			if a.uninstalling {
-				label = "正在移动…"
+				label = a.tr("apps.moving")
 			}
 			ui.PrimaryButton(c, label).Disabled(app.Running || !app.Scanned || a.uninstalling).OnClick(func() {
 				a.confirmUninstall = true
 			})
 		})
 	})
+}
+
+// confidenceLabel 将 core 层的语言中立置信度（high/medium）翻译为当前语言。
+func confidenceLabel(confidence string, tr i18n.Localizer) string {
+	switch confidence {
+	case "high":
+		return tr.T("apps.confidence_high")
+	case "medium":
+		return tr.T("apps.confidence_medium")
+	default:
+		return confidence
+	}
 }
 
 func healthMetric(c *ui.Context, label, value, detail string) {
@@ -701,7 +766,7 @@ func (a *application) uninstallSummary() string {
 		return ""
 	}
 	app := a.apps[a.selectedApp]
-	return fmt.Sprintf("%s 及 %d 个已选关联项将移到废纸篓，可在清空废纸篓前恢复。", app.Name, selectedFileCount(app)-1)
+	return a.trf("uninstall.summary", app.Name, selectedFileCount(app)-1)
 }
 
 func formatBytes(value uint64) string {

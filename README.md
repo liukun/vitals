@@ -9,6 +9,21 @@
 5. 只读体检可访问的第三方 LaunchAgent 和 LaunchDaemon，在状态页展示健康摘要，并跳转 macOS 管理启动项。
 6. 在 MacBook 上显示电量、充电状态、估算健康度和循环次数。
 7. 可选监测持续 30 秒以上的 CPU、内存和磁盘异常，并通过系统通知提醒。
+8. 支持简体中文与英文，默认跟随系统语言，可在设置中切换。
+
+## 截图
+
+| 菜单栏状态 | 状态概览 |
+| :---: | :---: |
+| ![菜单栏状态](resources/bar.png) | ![状态概览](resources/status.png) |
+
+| 内存占用 | 应用管理 |
+| :---: | :---: |
+| ![内存占用](resources/ram-status.png) | ![应用管理](resources/remove-app.png) |
+
+| 设置 |
+| :---: |
+| ![设置](resources/settings.png) |
 
 ## 开发
 

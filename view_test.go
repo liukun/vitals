@@ -65,7 +65,7 @@ func TestApplicationMemoryReleaseRequiresConfirmation(t *testing.T) {
 		Percent:      6.3,
 	}}
 	tester := ui.NewTester(app.view, panelWidth, panelHeight)
-	if err := tester.Click("飞书释放内存"); err != nil {
+	if err := tester.Click("飞书释放"); err != nil {
 		t.Fatal(err)
 	}
 	if !app.confirmMemory || !tester.HasText("退出并释放") {

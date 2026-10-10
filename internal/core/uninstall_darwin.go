@@ -32,7 +32,7 @@ type FullDiskAccessError struct {
 
 func (e *FullDiskAccessError) Error() string {
 	return fmt.Sprintf(
-		"无法移除受 macOS 保护的数据：\n%s\n\n请允许 Vitals 完全磁盘访问后重试。应用本体尚未移除",
+		"cannot remove macOS-protected data:\n%s\n\ngrant Full Disk Access to Vitals and retry. the app bundle has not been removed",
 		e.Path,
 	)
 }
@@ -216,7 +216,7 @@ func ScanRelatedFiles(ctx context.Context, app AppInfo) ([]RelatedFile, error) {
 				Size:       pathSize(path),
 				Kind:       filepath.Base(root),
 				Confidence: confidence,
-				Selected:   confidence == "高",
+				Selected:   confidence == confidenceHigh,
 			})
 		}
 	}
@@ -229,15 +229,20 @@ func ScanRelatedFiles(ctx context.Context, app AppInfo) ([]RelatedFile, error) {
 	return files, nil
 }
 
+const (
+	confidenceHigh   = "high"
+	confidenceMedium = "medium"
+)
+
 func relatedConfidence(filename string, app AppInfo) (string, bool) {
 	value := strings.ToLower(filename)
 	bundleID := strings.ToLower(strings.TrimSpace(app.BundleID))
 	if bundleID != "" && (value == bundleID || strings.HasPrefix(value, bundleID+".") || strings.HasPrefix(value, bundleID+"-")) {
-		return "高", true
+		return confidenceHigh, true
 	}
 	name := strings.ToLower(strings.TrimSpace(app.Name))
 	if len(name) >= 4 && (value == name || strings.HasPrefix(value, name+".") || strings.HasPrefix(value, name+" ")) {
-		return "中", true
+		return confidenceMedium, true
 	}
 	return "", false
 }
@@ -245,13 +250,13 @@ func relatedConfidence(filename string, app AppInfo) (string, bool) {
 // QuitApplication 请求目标应用正常退出，不强制终止进程。
 func QuitApplication(ctx context.Context, app AppInfo) error {
 	if strings.TrimSpace(app.BundleID) == "" {
-		return fmt.Errorf("应用缺少 bundle id，无法安全退出")
+		return fmt.Errorf("app is missing bundle id, cannot quit safely")
 	}
 	script := `on run argv
 tell application id (item 1 of argv) to quit
 end run`
 	if output, err := exec.CommandContext(ctx, "/usr/bin/osascript", "-e", script, app.BundleID).CombinedOutput(); err != nil {
-		return fmt.Errorf("退出 %s: %s", app.Name, strings.TrimSpace(string(output)))
+		return fmt.Errorf("quit %s: %s", app.Name, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
@@ -268,18 +273,18 @@ func MoveToTrash(ctx context.Context, paths []string, trash func(string) error) 
 			return err
 		}
 		if path == "" || path == "/" || path == home {
-			return fmt.Errorf("拒绝处理不安全路径 %q", path)
+			return fmt.Errorf("refusing to process unsafe path %q", path)
 		}
 		if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
 			continue
 		} else if err != nil {
-			return fmt.Errorf("读取 %s: %w", path, err)
+			return fmt.Errorf("read %s: %w", path, err)
 		}
 		if err := trash(path); err != nil {
 			if protectedLibraryPath(path, home) {
 				return &FullDiskAccessError{Path: path}
 			}
-			return fmt.Errorf("无法将以下项目移入废纸篓：\n%s\n\n%s", path, err)
+			return fmt.Errorf("cannot move the following item to Trash:\n%s\n\n%s", path, err)
 		}
 	}
 	return nil

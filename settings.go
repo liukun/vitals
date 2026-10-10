@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"vitals/internal/i18n"
 )
 
 type appSettings struct {
@@ -16,6 +18,7 @@ type appSettings struct {
 	ShowNetwork bool   `json:"showNetwork"`
 	Alerts      bool   `json:"alerts"`
 	RefreshRate string `json:"refreshRate"`
+	Language    string `json:"language"`
 }
 
 func defaultSettings() appSettings {
@@ -24,7 +27,8 @@ func defaultSettings() appSettings {
 		ShowRAM:     true,
 		ShowGPU:     true,
 		ShowNetwork: true,
-		RefreshRate: "2 秒",
+		RefreshRate: "2s",
+		Language:    string(i18n.LangAuto),
 	}
 }
 
@@ -71,9 +75,14 @@ func saveSettings(path string, settings appSettings) error {
 
 func (s *appSettings) normalize() {
 	switch s.RefreshRate {
-	case "1 秒", "2 秒", "5 秒":
+	case "1s", "2s", "5s":
 	default:
-		s.RefreshRate = "2 秒"
+		s.RefreshRate = "2s"
+	}
+	switch i18n.Lang(s.Language) {
+	case i18n.LangAuto, i18n.LangZH, i18n.LangEN:
+	default:
+		s.Language = string(i18n.LangAuto)
 	}
 	if !s.ShowCPU && !s.ShowRAM && !s.ShowGPU && !s.ShowNetwork {
 		s.ShowCPU = true
@@ -85,9 +94,9 @@ func (s *appSettings) normalize() {
 
 func (s appSettings) refreshInterval() time.Duration {
 	switch s.RefreshRate {
-	case "1 秒":
+	case "1s":
 		return time.Second
-	case "5 秒":
+	case "5s":
 		return 5 * time.Second
 	default:
 		return 2 * time.Second
