@@ -1,0 +1,13 @@
+{
+  "name": "Vitals",
+  "identifier": "dev.vitals.mac",
+  "version": "0.2.0",
+  "out": "build",
+  "macos": {
+    "minimumSystemVersion": "13.0",
+    "infoPlist": {
+      "LSUIElement": true,
+      "NSHumanReadableCopyright": "Copyright 2026 Vitals"
+    }
+  }
+}
