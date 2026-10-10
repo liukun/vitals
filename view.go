@@ -30,6 +30,64 @@ func vectorIcon(shapes string) *ui.SVG {
 	return ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">` + shapes + `</svg>`))
 }
 
+// iconChevronDown 是 ui.Select 默认触发器右侧的下拉箭头。
+var iconChevronDown = vectorIcon(`<path d="M6 9l6 6 6-6"/>`)
+
+// styledSelect 渲染一个与 ui.Select 视觉完全一致的下拉框，
+// 但支持「存储值」与「显示文案」分离，避免语言切换后存储值被覆盖。
+func (a *application) styledSelect(
+	c *ui.Context,
+	selected *string,
+	label string,
+	values []string,
+	labelFn func(value string) string,
+	onChange func(),
+) {
+	t := c.Theme()
+	sel := ui.SelectBase(c, selected)
+
+	// 触发器：复刻 styleButton(c, b, false) + chevron 的样式。
+	b := sel.Trigger
+	b.Padding(t.Space(1.5), t.Space(3.5)).Gap(t.Space(1.5)).Radius(t.Radius)
+	bg := t.Surface
+	switch {
+	case b.Pressed():
+		bg = t.SurfacePressed
+	case b.Hovered():
+		bg = t.SurfaceHover
+	}
+	b.Background(bg).TextColor(t.Text).Border(1, t.Border)
+	b.Justify(ui.SpaceBetween).MinWidth(t.Space(35))
+	b.Label(label).Children(func() {
+		ui.Text(c, labelFn(*selected))
+		ui.Box(c).Size(t.Space(2.5), t.Space(2.5)).Shrink(0).
+			TextColor(t.TextMuted).Children(func() {
+			ui.Icon(c, iconChevronDown)
+		})
+	})
+
+	// 弹出面板：复刻 stylePanel 的样式。
+	sel.Popup(func(panel ui.Element) {
+		panel.Margin(t.Space(1), 0, 0, 0).Padding(t.Space(1)).
+			Radius(t.Radius + 2).Background(t.Background).Border(1, t.Border)
+		panel.Shadow(0, 6, 20, 0, ui.RGBA(0, 0, 0, 0.18))
+		for _, value := range values {
+			item := sel.Item(value).Padding(t.Space(1.5), t.Space(2.5)).Radius(t.Radius)
+			switch {
+			case item.Highlighted():
+				item.Background(t.Accent).TextColor(t.AccentText)
+			case value == *selected:
+				item.Background(t.Surface)
+			}
+			item.Children(func() { ui.Text(c, labelFn(value)) })
+		}
+	})
+
+	if b.Changed() && onChange != nil {
+		onChange()
+	}
+}
+
 func (a *application) view(c *ui.Context) {
 	if c.Shortcut(0, ui.KeyEscape) || c.Shortcut(ui.Cmd, ui.KeyW) {
 		if a.win != nil {
@@ -392,44 +450,28 @@ func (a *application) settingsView(c *ui.Context) {
 	}).Padding(14)
 }
 
-// refreshRateSelect 使用 SelectBase 分离存储值（1s/2s/5s）与显示文案。
+// refreshRateSelect 存储值（1s/2s/5s）与显示文案分离，语言切换后显示随之变化。
 func (a *application) refreshRateSelect(c *ui.Context) {
-	sel := ui.SelectBase(c, &a.settings.RefreshRate)
-	sel.Trigger.Label(a.tr("settings.refresh_rate")).Children(func() {
-		ui.Text(c, a.tr("refresh."+a.settings.RefreshRate))
-	})
-	sel.Popup(func(panel ui.Element) {
-		for _, value := range []string{"1s", "2s", "5s"} {
-			item := sel.Item(value)
-			if item.Highlighted() {
-				item.Background(c.Theme().Accent).TextColor(ui.RGB(255, 255, 255))
-			}
-			item.Children(func() { ui.Text(c, a.tr("refresh."+value)) })
-		}
-	})
-	if sel.Trigger.Changed() {
-		a.persistSettings()
-	}
+	a.styledSelect(
+		c,
+		&a.settings.RefreshRate,
+		a.tr("settings.refresh_rate"),
+		[]string{"1s", "2s", "5s"},
+		func(value string) string { return a.tr("refresh." + value) },
+		a.persistSettings,
+	)
 }
 
 // languageSelect 提供 auto/zh/en 三档，显示文案随当前语言变化。
 func (a *application) languageSelect(c *ui.Context) {
-	sel := ui.SelectBase(c, &a.settings.Language)
-	sel.Trigger.Label(a.tr("settings.language")).Children(func() {
-		ui.Text(c, a.languageLabel(a.settings.Language))
-	})
-	sel.Popup(func(panel ui.Element) {
-		for _, value := range []string{string(i18n.LangAuto), string(i18n.LangZH), string(i18n.LangEN)} {
-			item := sel.Item(value)
-			if item.Highlighted() {
-				item.Background(c.Theme().Accent).TextColor(ui.RGB(255, 255, 255))
-			}
-			item.Children(func() { ui.Text(c, a.languageLabel(value)) })
-		}
-	})
-	if sel.Trigger.Changed() {
-		a.setLanguage(a.settings.Language)
-	}
+	a.styledSelect(
+		c,
+		&a.settings.Language,
+		a.tr("settings.language"),
+		[]string{string(i18n.LangAuto), string(i18n.LangZH), string(i18n.LangEN)},
+		a.languageLabel,
+		func() { a.setLanguage(a.settings.Language) },
+	)
 }
 
 func (a *application) languageLabel(value string) string {
